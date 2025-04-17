@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 //@ts-nocheck
@@ -35,6 +36,7 @@ export default function Home() {
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const displayStreamRef = useRef<MediaStream | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
 
   const getDevices = async () => {
     try {
@@ -93,8 +95,11 @@ export default function Home() {
       }
 
       const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { displaySurface: "monitor" },
-        audio: true,
+        video: true,
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+        },
       });
 
       if (videoPreviewRef.current) {
@@ -107,9 +112,24 @@ export default function Home() {
     }
   };
 
+  const combineAudioStreams = (streams: MediaStream[]) => {
+    const ctx = new AudioContext();
+    const destination = ctx.createMediaStreamDestination();
+
+    streams.forEach((stream) => {
+      if (stream.getAudioTracks().length > 0) {
+        const source = ctx.createMediaStreamSource(stream);
+        source.connect(destination);
+      }
+    });
+
+    return destination.stream;
+  };
+
   const combineStreams = (
     displayStream: MediaStream,
-    cameraStream: MediaStream
+    cameraStream: MediaStream,
+    audioStream: MediaStream
   ) => {
     const canvas = canvasRef.current;
     if (!canvas) return displayStream;
@@ -142,7 +162,14 @@ export default function Home() {
     };
 
     drawFrame();
-    return canvas.captureStream(30);
+
+    const videoStream = canvas.captureStream(30);
+    const combinedStream = new MediaStream([
+      ...videoStream.getVideoTracks(),
+      ...audioStream.getAudioTracks(),
+    ]);
+
+    return combinedStream;
   };
 
   const startRecording = async () => {
@@ -154,11 +181,22 @@ export default function Home() {
 
       let streamToRecord: MediaStream;
 
+      // Get microphone stream
+      const micStream = await navigator.mediaDevices.getUserMedia({
+        audio: { deviceId: selectedMicrophone },
+        video: false,
+      });
+
       if (recordingMode === "camera") {
-        streamToRecord = await navigator.mediaDevices.getUserMedia({
+        const cameraStream = await navigator.mediaDevices.getUserMedia({
           video: { deviceId: selectedCamera },
-          audio: { deviceId: selectedMicrophone },
+          audio: false,
         });
+
+        streamToRecord = new MediaStream([
+          ...cameraStream.getVideoTracks(),
+          ...micStream.getAudioTracks(),
+        ]);
       } else if (recordingMode === "screen") {
         if (!displayStreamRef.current) {
           await startScreenPreview();
@@ -167,11 +205,21 @@ export default function Home() {
           toast.error("No screen stream available");
           return;
         }
-        streamToRecord = displayStreamRef.current;
+
+        const audioStreams = [micStream];
+        if (displayStreamRef.current.getAudioTracks().length > 0) {
+          audioStreams.push(displayStreamRef.current);
+        }
+
+        const combinedAudio = combineAudioStreams(audioStreams);
+        streamToRecord = new MediaStream([
+          ...displayStreamRef.current.getVideoTracks(),
+          ...combinedAudio.getAudioTracks(),
+        ]);
       } else {
-        const mediaStream = await navigator.mediaDevices.getUserMedia({
+        const cameraStream = await navigator.mediaDevices.getUserMedia({
           video: { deviceId: selectedCamera },
-          audio: { deviceId: selectedMicrophone },
+          audio: false,
         });
 
         if (!displayStreamRef.current) {
@@ -182,7 +230,17 @@ export default function Home() {
           return;
         }
 
-        streamToRecord = combineStreams(displayStreamRef.current, mediaStream);
+        const audioStreams = [micStream];
+        if (displayStreamRef.current.getAudioTracks().length > 0) {
+          audioStreams.push(displayStreamRef.current);
+        }
+
+        const combinedAudio = combineAudioStreams(audioStreams);
+        streamToRecord = combineStreams(
+          displayStreamRef.current,
+          cameraStream,
+          combinedAudio
+        );
       }
 
       const mediaRecorder = new MediaRecorder(streamToRecord, {
@@ -249,6 +307,9 @@ export default function Home() {
       }
       if (displayStreamRef.current) {
         displayStreamRef.current.getTracks().forEach((track) => track.stop());
+      }
+      if (audioContextRef.current) {
+        audioContextRef.current.close();
       }
     };
   }, [recordingMode]);
