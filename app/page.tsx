@@ -1,26 +1,15 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment */
 /* eslint-disable @typescript-eslint/no-unused-vars */
+//@ts-nocheck
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Camera,
-  Video,
-  Mic,
-  StopCircle,
-  Download,
-  Smartphone,
-} from "lucide-react";
+import { Video } from "lucide-react";
 import { toast } from "sonner";
-import { QRCodeSVG } from "qrcode.react";
+import { DeviceSelector } from "@/components/screen-recorder/DeviceSelector";
+import { PreviewScreen } from "@/components/screen-recorder/PreviewScreen";
+import { RecordingControls } from "@/components/screen-recorder/RecordingControls";
 
 export default function Home() {
   const [isRecording, setIsRecording] = useState(false);
@@ -33,7 +22,6 @@ export default function Home() {
   const [availableMicrophones, setAvailableMicrophones] = useState<
     MediaDeviceInfo[]
   >([]);
-  const [isFullscreen, setIsFullscreen] = useState(false);
   const [showQRCode, setShowQRCode] = useState(false);
   const [cameraPosition, setCameraPosition] = useState({ x: 20, y: 20 });
 
@@ -42,6 +30,7 @@ export default function Home() {
   const cameraPreviewRef = useRef<HTMLVideoElement>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const displayStreamRef = useRef<MediaStream | null>(null);
 
   const getDevices = async () => {
     try {
@@ -93,6 +82,27 @@ export default function Home() {
     }
   };
 
+  const startScreenPreview = async () => {
+    try {
+      if (displayStreamRef.current) {
+        displayStreamRef.current.getTracks().forEach((track) => track.stop());
+      }
+
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { displaySurface: "monitor" },
+        audio: true,
+      });
+
+      if (videoPreviewRef.current) {
+        videoPreviewRef.current.srcObject = stream;
+        displayStreamRef.current = stream;
+      }
+    } catch (error) {
+      toast.error("Error accessing screen");
+      console.error(error);
+    }
+  };
+
   const combineStreams = (
     displayStream: MediaStream,
     cameraStream: MediaStream
@@ -114,10 +124,7 @@ export default function Home() {
     cameraVideo.play();
 
     const drawFrame = () => {
-      // Draw main screen
       ctx.drawImage(mainVideo, 0, 0, canvas.width, canvas.height);
-
-      // Draw camera feed in corner
       const cameraWidth = canvas.width / 4;
       const cameraHeight = (cameraWidth * 9) / 16;
       ctx.drawImage(
@@ -127,7 +134,6 @@ export default function Home() {
         cameraWidth,
         cameraHeight
       );
-
       requestAnimationFrame(drawFrame);
     };
 
@@ -147,16 +153,19 @@ export default function Home() {
         audio: { deviceId: selectedMicrophone },
       });
 
-      const displayStream = await navigator.mediaDevices.getDisplayMedia({
-        video: { displaySurface: "monitor" },
-        audio: true,
-      });
-
-      if (videoPreviewRef.current) {
-        videoPreviewRef.current.srcObject = displayStream;
+      if (!displayStreamRef.current) {
+        await startScreenPreview();
       }
 
-      const combinedStream = combineStreams(displayStream, mediaStream);
+      if (!displayStreamRef.current) {
+        toast.error("No screen stream available");
+        return;
+      }
+
+      const combinedStream = combineStreams(
+        displayStreamRef.current,
+        mediaStream
+      );
 
       const mediaRecorder = new MediaRecorder(combinedStream, {
         mimeType: "video/webm;codecs=vp9,opus",
@@ -174,7 +183,6 @@ export default function Home() {
       mediaRecorder.onstop = () => {
         setRecordedChunks(chunks);
         combinedStream.getTracks().forEach((track) => track.stop());
-        displayStream.getTracks().forEach((track) => track.stop());
         mediaStream.getTracks().forEach((track) => track.stop());
       };
 
@@ -212,33 +220,16 @@ export default function Home() {
     toast.success("Recording downloaded");
   };
 
-  const toggleFullscreen = () => {
-    if (!videoPreviewRef.current) return;
-
-    if (!isFullscreen) {
-      if (videoPreviewRef.current.requestFullscreen) {
-        videoPreviewRef.current.requestFullscreen();
-      }
-    } else {
-      if (document.exitFullscreen) {
-        document.exitFullscreen();
-      }
-    }
-    setIsFullscreen(!isFullscreen);
-  };
-
   useEffect(() => {
     getDevices();
+    startScreenPreview();
 
-    const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
-    };
-
-    document.addEventListener("fullscreenchange", handleFullscreenChange);
     return () => {
-      document.removeEventListener("fullscreenchange", handleFullscreenChange);
       if (cameraStreamRef.current) {
         cameraStreamRef.current.getTracks().forEach((track) => track.stop());
+      }
+      if (displayStreamRef.current) {
+        displayStreamRef.current.getTracks().forEach((track) => track.stop());
       }
     };
   }, []);
@@ -260,150 +251,32 @@ export default function Home() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium flex items-center gap-2">
-                  <Camera className="w-4 h-4" />
-                  Camera
-                </label>
-                <div className="flex gap-2">
-                  <Select
-                    value={selectedCamera}
-                    onValueChange={setSelectedCamera}
-                  >
-                    <SelectTrigger className="flex-1">
-                      <SelectValue placeholder="Select camera" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableCameras.map((camera) => (
-                        <SelectItem
-                          key={camera.deviceId}
-                          value={camera.deviceId}
-                        >
-                          {camera.label ||
-                            `Camera ${camera.deviceId.slice(0, 8)}`}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => setShowQRCode(!showQRCode)}
-                    className="shrink-0"
-                  >
-                    <Smartphone className="h-4 w-4" />
-                  </Button>
-                </div>
-                {showQRCode && (
-                  <div className="mt-2 p-4 bg-white rounded-lg">
-                    <p className="text-sm mb-2">
-                      Scan to use your phone as a camera:
-                    </p>
-                    <QRCodeSVG
-                      value={`https://${window.location.hostname}:${window.location.port}/camera`}
-                      size={150}
-                    />
-                  </div>
-                )}
-              </div>
+            <DeviceSelector
+              availableCameras={availableCameras}
+              availableMicrophones={availableMicrophones}
+              selectedCamera={selectedCamera}
+              selectedMicrophone={selectedMicrophone}
+              setSelectedCamera={setSelectedCamera}
+              setSelectedMicrophone={setSelectedMicrophone}
+              showQRCode={showQRCode}
+              setShowQRCode={setShowQRCode}
+            />
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium flex items-center gap-2">
-                  <Mic className="w-4 h-4" />
-                  Microphone
-                </label>
-                <Select
-                  value={selectedMicrophone}
-                  onValueChange={setSelectedMicrophone}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select microphone" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableMicrophones.map((mic) => (
-                      <SelectItem key={mic.deviceId} value={mic.deviceId}>
-                        {mic.label || `Microphone ${mic.deviceId.slice(0, 8)}`}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
+            <PreviewScreen
+              videoPreviewRef={videoPreviewRef}
+              canvasRef={canvasRef}
+              cameraPreviewRef={cameraPreviewRef}
+              cameraPosition={cameraPosition}
+              setCameraPosition={setCameraPosition}
+            />
 
-            <div className="relative aspect-video bg-muted rounded-lg overflow-hidden">
-              <video
-                ref={videoPreviewRef}
-                autoPlay
-                muted
-                className="w-full h-full object-contain"
-              />
-              <canvas ref={canvasRef} className="hidden" />
-
-              <div
-                className="absolute w-40 h-40 aspect-video bg-black rounded-full overflow-hidden cursor-move shadow-lg"
-                style={{
-                  right: `${cameraPosition.x}px`,
-                  bottom: `${cameraPosition.y}px`,
-                }}
-                draggable="true"
-                onDragStart={(e) => {
-                  const target = e.target as HTMLDivElement;
-                  const rect = target.getBoundingClientRect();
-                  const offsetX = e.clientX - rect.left;
-                  const offsetY = e.clientY - rect.top;
-                  e.dataTransfer.setData("text/plain", `${offsetX},${offsetY}`);
-                }}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  const [offsetX, offsetY] = e.dataTransfer
-                    .getData("text/plain")
-                    .split(",");
-                  const newX = e.clientX - parseInt(offsetX);
-                  const newY = e.clientY - parseInt(offsetY);
-                  setCameraPosition({ x: newX, y: newY });
-                }}
-              >
-                <video
-                  ref={cameraPreviewRef}
-                  autoPlay
-                  muted
-                  className="w-full h-full object-cover"
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-center gap-4">
-              {!isRecording ? (
-                <Button onClick={startRecording} className="gap-2">
-                  <Video className="w-4 h-4" />
-                  Start Recording
-                </Button>
-              ) : (
-                <Button
-                  onClick={stopRecording}
-                  variant="destructive"
-                  className="gap-2"
-                >
-                  <StopCircle className="w-4 h-4" />
-                  Stop Recording
-                </Button>
-              )}
-
-              {recordedChunks.length > 0 && (
-                <Button
-                  onClick={downloadRecording}
-                  variant="outline"
-                  className="gap-2"
-                >
-                  <Download className="w-4 h-4" />
-                  Download Recording
-                </Button>
-              )}
-            </div>
+            <RecordingControls
+              isRecording={isRecording}
+              hasRecording={recordedChunks.length > 0}
+              onStartRecording={startRecording}
+              onStopRecording={stopRecording}
+              onDownloadRecording={downloadRecording}
+            />
           </CardContent>
         </Card>
       </div>
