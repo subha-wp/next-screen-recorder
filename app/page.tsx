@@ -10,6 +10,9 @@ import { toast } from "sonner";
 import { DeviceSelector } from "@/components/screen-recorder/DeviceSelector";
 import { PreviewScreen } from "@/components/screen-recorder/PreviewScreen";
 import { RecordingControls } from "@/components/screen-recorder/RecordingControls";
+import { RecordingModeSelector } from "@/components/screen-recorder/RecordingModeSelector";
+
+export type RecordingMode = "screen" | "camera" | "both";
 
 export default function Home() {
   const [isRecording, setIsRecording] = useState(false);
@@ -24,6 +27,7 @@ export default function Home() {
   >([]);
   const [showQRCode, setShowQRCode] = useState(false);
   const [cameraPosition, setCameraPosition] = useState({ x: 20, y: 20 });
+  const [recordingMode, setRecordingMode] = useState<RecordingMode>("both");
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const videoPreviewRef = useRef<HTMLVideoElement>(null);
@@ -148,26 +152,40 @@ export default function Home() {
         return;
       }
 
-      const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { deviceId: selectedCamera },
-        audio: { deviceId: selectedMicrophone },
-      });
+      let streamToRecord: MediaStream;
 
-      if (!displayStreamRef.current) {
-        await startScreenPreview();
+      if (recordingMode === "camera") {
+        streamToRecord = await navigator.mediaDevices.getUserMedia({
+          video: { deviceId: selectedCamera },
+          audio: { deviceId: selectedMicrophone },
+        });
+      } else if (recordingMode === "screen") {
+        if (!displayStreamRef.current) {
+          await startScreenPreview();
+        }
+        if (!displayStreamRef.current) {
+          toast.error("No screen stream available");
+          return;
+        }
+        streamToRecord = displayStreamRef.current;
+      } else {
+        const mediaStream = await navigator.mediaDevices.getUserMedia({
+          video: { deviceId: selectedCamera },
+          audio: { deviceId: selectedMicrophone },
+        });
+
+        if (!displayStreamRef.current) {
+          await startScreenPreview();
+        }
+        if (!displayStreamRef.current) {
+          toast.error("No screen stream available");
+          return;
+        }
+
+        streamToRecord = combineStreams(displayStreamRef.current, mediaStream);
       }
 
-      if (!displayStreamRef.current) {
-        toast.error("No screen stream available");
-        return;
-      }
-
-      const combinedStream = combineStreams(
-        displayStreamRef.current,
-        mediaStream
-      );
-
-      const mediaRecorder = new MediaRecorder(combinedStream, {
+      const mediaRecorder = new MediaRecorder(streamToRecord, {
         mimeType: "video/webm;codecs=vp9,opus",
       });
 
@@ -182,8 +200,7 @@ export default function Home() {
 
       mediaRecorder.onstop = () => {
         setRecordedChunks(chunks);
-        combinedStream.getTracks().forEach((track) => track.stop());
-        mediaStream.getTracks().forEach((track) => track.stop());
+        streamToRecord.getTracks().forEach((track) => track.stop());
       };
 
       mediaRecorder.start(1000);
@@ -212,7 +229,7 @@ export default function Home() {
     document.body.appendChild(a);
     a.style.display = "none";
     a.href = url;
-    a.download = `screen-recording-${new Date().toISOString()}.webm`;
+    a.download = `recording-${new Date().toISOString()}.webm`;
     a.click();
     URL.revokeObjectURL(url);
     document.body.removeChild(a);
@@ -222,7 +239,9 @@ export default function Home() {
 
   useEffect(() => {
     getDevices();
-    startScreenPreview();
+    if (recordingMode !== "camera") {
+      startScreenPreview();
+    }
 
     return () => {
       if (cameraStreamRef.current) {
@@ -232,7 +251,7 @@ export default function Home() {
         displayStreamRef.current.getTracks().forEach((track) => track.stop());
       }
     };
-  }, []);
+  }, [recordingMode]);
 
   useEffect(() => {
     if (selectedCamera) {
@@ -251,6 +270,11 @@ export default function Home() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
+            <RecordingModeSelector
+              mode={recordingMode}
+              onModeChange={setRecordingMode}
+            />
+
             <DeviceSelector
               availableCameras={availableCameras}
               availableMicrophones={availableMicrophones}
@@ -268,6 +292,7 @@ export default function Home() {
               cameraPreviewRef={cameraPreviewRef}
               cameraPosition={cameraPosition}
               setCameraPosition={setCameraPosition}
+              recordingMode={recordingMode}
             />
 
             <RecordingControls
