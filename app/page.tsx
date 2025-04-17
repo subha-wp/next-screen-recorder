@@ -148,16 +148,54 @@ export default function Home() {
     cameraVideo.play();
 
     const drawFrame = () => {
+      // Draw main screen
       ctx.drawImage(mainVideo, 0, 0, canvas.width, canvas.height);
-      const cameraWidth = canvas.width / 4;
-      const cameraHeight = (cameraWidth * 9) / 16;
+
+      // Calculate camera dimensions for 1:1 ratio
+      const cameraSize = Math.min(canvas.width / 4, canvas.height / 4); // Square size
+      const cameraX = canvas.width - cameraSize - 40; // 40px from right
+      const cameraY = canvas.height - cameraSize - 40; // 40px from bottom
+
+      // Save the current context state
+      ctx.save();
+
+      // Create a circular path
+      ctx.beginPath();
+      const centerX = cameraX + cameraSize / 2;
+      const centerY = cameraY + cameraSize / 2;
+      const radius = cameraSize / 2;
+      ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+      ctx.closePath();
+
+      // Clip to the circle
+      ctx.clip();
+
+      // Draw the camera video with center crop to maintain aspect ratio
+      const scale =
+        cameraSize / Math.min(cameraVideo.videoWidth, cameraVideo.videoHeight);
+      const scaledWidth = cameraVideo.videoWidth * scale;
+      const scaledHeight = cameraVideo.videoHeight * scale;
+      const offsetX = (cameraSize - scaledWidth) / 2;
+      const offsetY = (cameraSize - scaledHeight) / 2;
+
       ctx.drawImage(
         cameraVideo,
-        cameraPosition.x,
-        cameraPosition.y,
-        cameraWidth,
-        cameraHeight
+        cameraX + offsetX,
+        cameraY + offsetY,
+        scaledWidth,
+        scaledHeight
       );
+
+      // Restore the context state
+      ctx.restore();
+
+      // Add a border to the circle
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
       requestAnimationFrame(drawFrame);
     };
 
