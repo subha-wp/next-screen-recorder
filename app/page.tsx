@@ -162,8 +162,8 @@ export default function Home() {
       ctx.drawImage(mainVideo, 0, 0, canvas.width, canvas.height);
 
       const cameraSize = Math.min(canvas.width / 4, canvas.height / 4);
-      const cameraX = canvas.width - cameraSize - 40;
-      const cameraY = canvas.height - cameraSize - 40;
+      const cameraX = canvas.width - cameraSize - 30;
+      const cameraY = canvas.height - cameraSize - 30;
 
       const centerX = cameraX + cameraSize / 2;
       const centerY = cameraY + cameraSize / 2;
