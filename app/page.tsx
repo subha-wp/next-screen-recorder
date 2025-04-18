@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/exhaustive-deps */
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 //@ts-nocheck
@@ -29,6 +28,12 @@ export default function Home() {
   const [showQRCode, setShowQRCode] = useState(false);
   const [cameraPosition, setCameraPosition] = useState({ x: 20, y: 20 });
   const [recordingMode, setRecordingMode] = useState<RecordingMode>("both");
+  const [isConverting, setIsConverting] = useState(false);
+  const [recordingStartTime, setRecordingStartTime] = useState<number | null>(
+    null
+  );
+  const [recordingDuration, setRecordingDuration] = useState<number>(0);
+  const [isMirrored, setIsMirrored] = useState(true); // Default to mirrored (selfie mode)
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const videoPreviewRef = useRef<HTMLVideoElement>(null);
@@ -37,6 +42,11 @@ export default function Home() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const displayStreamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const recordingInterval = useRef<NodeJS.Timeout | null>(null);
+
+  const toggleMirror = () => {
+    setIsMirrored(!isMirrored);
+  };
 
   const getDevices = async () => {
     try {
@@ -114,6 +124,7 @@ export default function Home() {
 
   const combineAudioStreams = (streams: MediaStream[]) => {
     const ctx = new AudioContext();
+    audioContextRef.current = ctx;
     const destination = ctx.createMediaStreamDestination();
 
     streams.forEach((stream) => {
@@ -148,29 +159,21 @@ export default function Home() {
     cameraVideo.play();
 
     const drawFrame = () => {
-      // Draw main screen
       ctx.drawImage(mainVideo, 0, 0, canvas.width, canvas.height);
 
-      // Calculate camera dimensions for 1:1 ratio
-      const cameraSize = Math.min(canvas.width / 4, canvas.height / 4); // Square size
-      const cameraX = canvas.width - cameraSize - 40; // 40px from right
-      const cameraY = canvas.height - cameraSize - 40; // 40px from bottom
+      const cameraSize = Math.min(canvas.width / 4, canvas.height / 4);
+      const cameraX = canvas.width - cameraSize - 40;
+      const cameraY = canvas.height - cameraSize - 40;
 
-      // Save the current context state
-      ctx.save();
-
-      // Create a circular path
-      ctx.beginPath();
       const centerX = cameraX + cameraSize / 2;
       const centerY = cameraY + cameraSize / 2;
       const radius = cameraSize / 2;
-      ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
-      ctx.closePath();
 
-      // Clip to the circle
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
       ctx.clip();
 
-      // Draw the camera video with center crop to maintain aspect ratio
       const scale =
         cameraSize / Math.min(cameraVideo.videoWidth, cameraVideo.videoHeight);
       const scaledWidth = cameraVideo.videoWidth * scale;
@@ -178,18 +181,29 @@ export default function Home() {
       const offsetX = (cameraSize - scaledWidth) / 2;
       const offsetY = (cameraSize - scaledHeight) / 2;
 
-      ctx.drawImage(
-        cameraVideo,
-        cameraX + offsetX,
-        cameraY + offsetY,
-        scaledWidth,
-        scaledHeight
-      );
+      // Apply mirroring effect to camera if enabled
+      if (isMirrored) {
+        ctx.translate(cameraX + cameraSize, 0);
+        ctx.scale(-1, 1);
+        ctx.drawImage(
+          cameraVideo,
+          -offsetX,
+          cameraY + offsetY,
+          scaledWidth,
+          scaledHeight
+        );
+      } else {
+        ctx.drawImage(
+          cameraVideo,
+          cameraX + offsetX,
+          cameraY + offsetY,
+          scaledWidth,
+          scaledHeight
+        );
+      }
 
-      // Restore the context state
       ctx.restore();
 
-      // Add a border to the circle
       ctx.beginPath();
       ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
       ctx.strokeStyle = "#ffffff";
@@ -201,7 +215,7 @@ export default function Home() {
 
     drawFrame();
 
-    const videoStream = canvas.captureStream(30);
+    const videoStream = canvas.captureStream(60); // Increased to 60fps for smoother video
     const combinedStream = new MediaStream([
       ...videoStream.getVideoTracks(),
       ...audioStream.getAudioTracks(),
@@ -219,7 +233,6 @@ export default function Home() {
 
       let streamToRecord: MediaStream;
 
-      // Get microphone stream
       const micStream = await navigator.mediaDevices.getUserMedia({
         audio: { deviceId: selectedMicrophone },
         video: false,
@@ -231,10 +244,45 @@ export default function Home() {
           audio: false,
         });
 
-        streamToRecord = new MediaStream([
-          ...cameraStream.getVideoTracks(),
-          ...micStream.getAudioTracks(),
-        ]);
+        // For camera-only mode, we need to handle mirroring differently
+        if (isMirrored) {
+          // Create a canvas to mirror the camera feed
+          const canvas = document.createElement("canvas");
+          const ctx = canvas.getContext("2d");
+          const videoElement = document.createElement("video");
+
+          videoElement.srcObject = cameraStream;
+          videoElement.play();
+
+          videoElement.onloadedmetadata = () => {
+            canvas.width = videoElement.videoWidth;
+            canvas.height = videoElement.videoHeight;
+          };
+
+          const mirrorStream = canvas.captureStream(60);
+
+          const drawMirroredFrame = () => {
+            if (canvas.width === 0) return;
+            ctx.save();
+            ctx.translate(canvas.width, 0);
+            ctx.scale(-1, 1);
+            ctx.drawImage(videoElement, 0, 0);
+            ctx.restore();
+            requestAnimationFrame(drawMirroredFrame);
+          };
+
+          drawMirroredFrame();
+
+          streamToRecord = new MediaStream([
+            ...mirrorStream.getVideoTracks(),
+            ...micStream.getAudioTracks(),
+          ]);
+        } else {
+          streamToRecord = new MediaStream([
+            ...cameraStream.getVideoTracks(),
+            ...micStream.getAudioTracks(),
+          ]);
+        }
       } else if (recordingMode === "screen") {
         if (!displayStreamRef.current) {
           await startScreenPreview();
@@ -282,7 +330,8 @@ export default function Home() {
       }
 
       const mediaRecorder = new MediaRecorder(streamToRecord, {
-        mimeType: "video/webm;codecs=vp9,opus",
+        mimeType: "video/webm;codecs=h264,opus",
+        videoBitsPerSecond: 8000000, // 8 Mbps for better quality
       });
 
       mediaRecorderRef.current = mediaRecorder;
@@ -297,10 +346,20 @@ export default function Home() {
       mediaRecorder.onstop = () => {
         setRecordedChunks(chunks);
         streamToRecord.getTracks().forEach((track) => track.stop());
+        if (recordingInterval.current) {
+          clearInterval(recordingInterval.current);
+        }
       };
 
+      setRecordingStartTime(Date.now());
       mediaRecorder.start(1000);
       setIsRecording(true);
+
+      // Update recording duration every second
+      recordingInterval.current = setInterval(() => {
+        setRecordingDuration(Date.now() - (recordingStartTime || 0));
+      }, 1000);
+
       toast.success("Recording started");
     } catch (error) {
       toast.error("Error starting recording");
@@ -312,25 +371,61 @@ export default function Home() {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
+      if (recordingInterval.current) {
+        clearInterval(recordingInterval.current);
+      }
       toast.success("Recording stopped");
     }
   };
 
-  const downloadRecording = () => {
+  const downloadRecording = async () => {
     if (recordedChunks.length === 0) return;
 
-    const blob = new Blob(recordedChunks, { type: "video/webm" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    document.body.appendChild(a);
-    a.style.display = "none";
-    a.href = url;
-    a.download = `recording-${new Date().toISOString()}.webm`;
-    a.click();
-    URL.revokeObjectURL(url);
-    document.body.removeChild(a);
-    setRecordedChunks([]);
-    toast.success("Recording downloaded");
+    try {
+      setIsConverting(true);
+
+      // Combine all chunks into a single blob
+      const recordedBlob = new Blob(recordedChunks, {
+        type: "video/webm;codecs=h264,opus",
+      });
+
+      // Create a temporary video element to get duration
+      const tempVideo = document.createElement("video");
+      tempVideo.src = URL.createObjectURL(recordedBlob);
+
+      await new Promise((resolve) => {
+        tempVideo.addEventListener("loadedmetadata", () => {
+          resolve(undefined);
+        });
+      });
+
+      // Create the final blob with proper duration metadata
+      const finalBlob = new Blob([recordedBlob], {
+        type: "video/webm;codecs=h264,opus",
+      });
+
+      // Download the file
+      const url = URL.createObjectURL(finalBlob);
+      const a = document.createElement("a");
+      a.style.display = "none";
+      a.href = url;
+      a.download = `recording-${new Date().toISOString()}.webm`;
+      document.body.appendChild(a);
+      a.click();
+
+      // Cleanup
+      URL.revokeObjectURL(url);
+      URL.revokeObjectURL(tempVideo.src);
+      document.body.removeChild(a);
+      tempVideo.remove();
+      setRecordedChunks([]);
+      setIsConverting(false);
+      toast.success("Recording downloaded");
+    } catch (error) {
+      console.error("Error downloading recording:", error);
+      toast.error("Error downloading recording");
+      setIsConverting(false);
+    }
   };
 
   useEffect(() => {
@@ -348,6 +443,9 @@ export default function Home() {
       }
       if (audioContextRef.current) {
         audioContextRef.current.close();
+      }
+      if (recordingInterval.current) {
+        clearInterval(recordingInterval.current);
       }
     };
   }, [recordingMode]);
@@ -392,11 +490,14 @@ export default function Home() {
               cameraPosition={cameraPosition}
               setCameraPosition={setCameraPosition}
               recordingMode={recordingMode}
+              isMirrored={isMirrored}
+              toggleMirror={toggleMirror}
             />
 
             <RecordingControls
               isRecording={isRecording}
               hasRecording={recordedChunks.length > 0}
+              isConverting={isConverting}
               onStartRecording={startRecording}
               onStopRecording={stopRecording}
               onDownloadRecording={downloadRecording}
