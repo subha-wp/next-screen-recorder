@@ -1,10 +1,11 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
-import { Video, StopCircle, Download } from "lucide-react";
+import { Video, StopCircle, Download, Loader2 } from "lucide-react";
 
 interface RecordingControlsProps {
   isRecording: boolean;
   hasRecording: boolean;
+  isConverting: boolean;
   onStartRecording: () => void;
   onStopRecording: () => void;
   onDownloadRecording: () => void;
@@ -13,6 +14,7 @@ interface RecordingControlsProps {
 export function RecordingControls({
   isRecording,
   hasRecording,
+  isConverting,
   onStartRecording,
   onStopRecording,
   onDownloadRecording,
@@ -40,9 +42,14 @@ export function RecordingControls({
           onClick={onDownloadRecording}
           variant="outline"
           className="gap-2"
+          disabled={isConverting}
         >
-          <Download className="w-4 h-4" />
-          Download Recording
+          {isConverting ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Download className="w-4 h-4" />
+          )}
+          {isConverting ? "Converting to MP4..." : "Download Recording"}
         </Button>
       )}
     </div>

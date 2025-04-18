@@ -37,7 +37,7 @@ export function DeviceSelector({
         </label>
         <div className="flex gap-2">
           <Select value={selectedCamera} onValueChange={setSelectedCamera}>
-            <SelectTrigger className="flex-1">
+            <SelectTrigger className="w-[100%]">
               <SelectValue placeholder="Select camera" />
             </SelectTrigger>
             <SelectContent>
@@ -60,13 +60,13 @@ export function DeviceSelector({
           value={selectedMicrophone}
           onValueChange={setSelectedMicrophone}
         >
-          <SelectTrigger className="w-80">
+          <SelectTrigger className="w-[100%]">
             <SelectValue placeholder="Select microphone" />
           </SelectTrigger>
           <SelectContent>
             {availableMicrophones.map((mic) => (
               <SelectItem key={mic.deviceId} value={mic.deviceId}>
-                {mic.label || `Microphone ${mic.deviceId.slice(0, 8)}`}
+                {mic.label || `Microphone ${mic.deviceId.slice(0, 2)}`}
               </SelectItem>
             ))}
           </SelectContent>

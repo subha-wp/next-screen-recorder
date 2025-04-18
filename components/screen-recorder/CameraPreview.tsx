@@ -13,7 +13,7 @@ export function CameraPreview({
 }: CameraPreviewProps) {
   return (
     <div
-      className="absolute w-40 h-40 aspect-video border-blue-400 border-1 bg-black rounded-full overflow-hidden cursor-move shadow-lg"
+      className="absolute w-[15%]  aspect-square border-blue-400 border-1 bg-black rounded-full overflow-hidden cursor-move shadow-lg"
       style={{
         right: `${position.x}px`,
         bottom: `${position.y}px`,

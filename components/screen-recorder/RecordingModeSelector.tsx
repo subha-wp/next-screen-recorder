@@ -19,24 +19,21 @@ export function RecordingModeSelector({
         onClick={() => onModeChange("screen")}
         className="gap-2"
       >
-        <Monitor className="w-4 h-4" />
-        Screen Only
+        <Monitor className="w-4 h-4" />S O
       </Button>
       <Button
         variant={mode === "camera" ? "default" : "outline"}
         onClick={() => onModeChange("camera")}
         className="gap-2"
       >
-        <Camera className="w-4 h-4" />
-        Camera Only
+        <Camera className="w-4 h-4" />C O
       </Button>
       <Button
         variant={mode === "both" ? "default" : "outline"}
         onClick={() => onModeChange("both")}
         className="gap-2"
       >
-        <Split className="w-4 h-4" />
-        Screen & Camera
+        <Split className="w-4 h-4" />S & C
       </Button>
     </div>
   );
